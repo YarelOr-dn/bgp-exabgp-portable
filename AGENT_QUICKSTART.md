@@ -41,4 +41,6 @@ chmod 0600. `/BGP reset-profile` deletes it and re-asks.
 
 ## Tools
 
-`exabgp_session_lock` / `exabgp_session_release` / `exabgp_onboard` / `exabgp_start` (`selected_afis`) / `exabgp_verify` / `exabgp_inject` / `exabgp_withdraw` / `exabgp_malform` / `exabgp_stop`
+`exabgp_session_lock` / `exabgp_session_release` / `exabgp_onboard` / `exabgp_start` (`selected_afis`) / `exabgp_verify` / `exabgp_inject` / `exabgp_withdraw` / `exabgp_malform` / `exabgp_rfc_synthesize` / `exabgp_family_register` / `exabgp_capability_probe` / `exabgp_family_promote` / `exabgp_stop`
+
+RFC-driven new AFI/SAFI: paste RFC, build FAMILY_SCHEMA, `exabgp_rfc_synthesize`, then dump-only probe. Live send needs the lease. `BGP_FAMILY_AUTOPUBLISH` is a host MCP env flag (off = review queue).

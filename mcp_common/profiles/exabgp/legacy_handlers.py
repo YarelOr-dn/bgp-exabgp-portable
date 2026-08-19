@@ -396,6 +396,133 @@ def _exabgp_session_handoff(args: dict[str, Any]) -> dict[str, Any]:
     return save_handoff(payload, source_command="/BGP", tags=["bgp", "exabgp"])
 
 
+def _exabgp_family_mods():
+    d = _exabgp_dir()
+    if str(d) not in sys.path:
+        sys.path.insert(0, str(d))
+    import family_registry as _fr  # type: ignore
+    import rfc_synthesize as _rs  # type: ignore
+    import capability_speaker as _cs  # type: ignore
+    return _fr, _rs, _cs
+
+
+def _exabgp_parse_spec(args: dict[str, Any]) -> dict[str, Any]:
+    raw = args.get("spec_json")
+    spec: dict[str, Any] = {}
+    if isinstance(raw, dict):
+        spec = dict(raw)
+    elif raw:
+        spec = json.loads(str(raw))
+    if args.get("name"):
+        spec["name"] = args["name"]
+    if args.get("afi") is not None:
+        spec["afi"] = args["afi"]
+    if args.get("safi") is not None:
+        spec["safi"] = args["safi"]
+    cap = dict(spec.get("capability") or {})
+    if args.get("capability_code") is not None:
+        cap["code"] = args["capability_code"]
+    if args.get("capability_value_hex"):
+        cap["value_hex"] = args["capability_value_hex"]
+    if cap:
+        spec["capability"] = cap
+    encs = args.get("nlri_encodings")
+    if encs:
+        spec["nlri_tlvs"] = [{"name": f"f{i}", "type": i, "encoding": t.strip()} for i, t in enumerate(str(encs).split(",")) if t.strip()]
+    if args.get("rfc") or args.get("section"):
+        spec["source"] = {"rfc": args.get("rfc"), "section": args.get("section")}
+    spec["override"] = bool(args.get("override") or spec.get("override"))
+    spec.setdefault("path_attrs", spec.get("path_attrs") or [])
+    spec.setdefault("nlri_tlvs", spec.get("nlri_tlvs") or [])
+    return spec
+
+
+def _exabgp_family_register(args: dict[str, Any]) -> dict[str, Any]:
+    fr, _rs, _cs = _exabgp_family_mods()
+    spec = _exabgp_parse_spec(args)
+    owner = _exabgp_owner(args)
+    if args.get("publish"):
+        out = fr.publish(spec, owner=owner)
+    else:
+        out = fr.save_draft(spec, owner)
+    out["action"] = "exabgp family register"
+    out["dnos_af_hint"] = fr.dnos_af_hint(str(spec.get("name") or ""))
+    return out
+
+
+def _exabgp_family_list(args: dict[str, Any]) -> dict[str, Any]:
+    fr, _rs, _cs = _exabgp_family_mods()
+    out = fr.list_families(_exabgp_owner(args))
+    out["action"] = "exabgp family list"
+    return out
+
+
+def _exabgp_family_show(args: dict[str, Any]) -> dict[str, Any]:
+    fr, _rs, _cs = _exabgp_family_mods()
+    found = fr.get_family(str(args.get("name") or ""), owner=_exabgp_owner(args))
+    if not found:
+        return {"ok": False, "action": "exabgp family show", "verdict": "NOT_FOUND"}
+    return {"ok": True, "action": "exabgp family show", "spec": found}
+
+
+def _exabgp_family_unregister(args: dict[str, Any]) -> dict[str, Any]:
+    fr, _rs, _cs = _exabgp_family_mods()
+    out = fr.unregister(str(args.get("name") or ""))
+    out["action"] = "exabgp family unregister"
+    return out
+
+
+def _exabgp_rfc_synthesize(args: dict[str, Any]) -> dict[str, Any]:
+    _fr, rs, _cs = _exabgp_family_mods()
+    spec = _exabgp_parse_spec(args)
+    out = rs.stage(spec, _exabgp_owner(args), plugin_src=args.get("plugin_src"), rfc_text=args.get("rfc_text"))
+    out["action"] = "exabgp rfc synthesize"
+    return out
+
+
+def _exabgp_capability_probe(args: dict[str, Any]) -> dict[str, Any]:
+    fr, _rs, cs = _exabgp_family_mods()
+    spec = None
+    if args.get("spec_json") or args.get("afi") is not None:
+        spec = _exabgp_parse_spec(args)
+    elif args.get("name"):
+        spec = fr.get_family(str(args["name"]), owner=_exabgp_owner(args))
+    if not spec:
+        return {"ok": False, "action": "exabgp capability probe", "verdict": "NOT_FOUND", "errors": ["name or spec_json required"]}
+    mode = str(args.get("mode") or "dump_only")
+    kwargs = {
+        "local_as": args.get("local_as") or 65200,
+        "router_id": args.get("router_id") or "100.64.6.134",
+        "next_hop": args.get("next_hop") or args.get("router_id") or "100.64.6.134",
+        "timeout_sec": args.get("timeout_sec") or 8,
+    }
+    if not args.get("execute") or mode == "dump_only":
+        out = cs.dump_frames(spec, **kwargs)
+        out["action"] = "exabgp capability probe"
+        out["mode"] = "dump_only"
+        return out
+    blocked = _exabgp_lease_gate(args)
+    if blocked:
+        return blocked
+    if mode == "probe_port":
+        out = cs.run_probe_port(spec, **kwargs)
+    else:
+        target = str(args.get("target_ip") or "")
+        if not target:
+            return {"ok": False, "action": "exabgp capability probe", "verdict": "ERROR", "errors": ["target_ip required for transient"]}
+        out = cs.run_transient(spec, target, **kwargs)
+    out["action"] = "exabgp capability probe"
+    out["mode"] = mode
+    return out
+
+
+def _exabgp_family_promote(args: dict[str, Any]) -> dict[str, Any]:
+    _fr, rs, _cs = _exabgp_family_mods()
+    out = rs.promote(str(args.get("name") or ""), _exabgp_owner(args))
+    out["action"] = "exabgp family promote"
+    return out
+
+
 # === END RELOCATED HANDLERS ===
 
 # Names of the relocated handlers (everything defined between the markers).
@@ -439,4 +566,11 @@ HANDLERS = {
     'exabgp_session_release': _exabgp_session_release,
     'exabgp_onboard': _exabgp_onboard,
     'exabgp_malform': _exabgp_malform,
+    'exabgp_family_register': _exabgp_family_register,
+    'exabgp_family_list': _exabgp_family_list,
+    'exabgp_family_show': _exabgp_family_show,
+    'exabgp_family_unregister': _exabgp_family_unregister,
+    'exabgp_rfc_synthesize': _exabgp_rfc_synthesize,
+    'exabgp_capability_probe': _exabgp_capability_probe,
+    'exabgp_family_promote': _exabgp_family_promote,
 }
