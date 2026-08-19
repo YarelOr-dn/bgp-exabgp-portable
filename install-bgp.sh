@@ -105,7 +105,7 @@ print("wrote", path)
 PY
 fi
 
-log "GitHub: https://github.com/YarelOr-dn/bgp-exabgp-portable (DriveNets clone; SSH to the ExaBGP host still required)."
+log "GitHub: private repo YarelOr-dn/bgp-exabgp-portable (DriveNets org members only). SSH to the ExaBGP host still required."
 log "tunnel: bash $SCRIPT_DIR/bgp-tunnel.sh $EXABGP_HOST   # ssh -N -L 9304:127.0.0.1:9304"
 log "optional Spirent: ssh -N -L 9301:127.0.0.1:9301 $EXABGP_HOST  (not part of this package)"
 log "Reload Cursor MCP after install. /BGP AskQuestion needs Plan mode."
