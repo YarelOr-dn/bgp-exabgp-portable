@@ -160,12 +160,38 @@ def _exabgp_atomic_json(path: Path, payload: dict[str, Any]) -> None:
 
 
 def _exabgp_walk_leaves(device: str, timeout: int) -> dict[str, Any]:
+    d = _exabgp_dir()
+    if str(d) not in sys.path:
+        sys.path.insert(0, str(d))
+    import onboard as _onboard  # type: ignore
     listed = _dnos_tool("dnos_list_devices", {"format": "text"}, timeout=timeout)
     walk = _dnos_tool("dnos_dnaas_walk_from_dut", {"device_name": device, "format": "text"}, timeout=timeout)
     blob = json.dumps({"list": listed, "walk": walk}, default=str)
-    leaves = sorted(set(re.findall(r"DNAAS-LEAF[-_A-Za-z0-9]+", blob, re.I)))
+    leaves = _onboard.il_leaf_names(blob)
+    houston = sorted(set(re.findall(r"HO-DNAAS-LEAF[-_A-Za-z0-9]+", blob, re.I)))
     bundles = sorted(set(re.findall(r"bundle-\d+", blob, re.I)))
-    return {"leaves": leaves, "bundles": bundles, "list_ok": listed.get("ok"), "walk_ok": walk.get("ok")}
+    return {
+        "leaves": leaves,
+        "houston_leaves_ignored": houston,
+        "bundles": bundles,
+        "list_ok": listed.get("ok"),
+        "walk_ok": walk.get("ok"),
+        "lab": "il",
+    }
+
+
+def _exabgp_dry_ok(result: dict[str, Any]) -> tuple[bool, str]:
+    text = json.dumps(result, default=str)
+    if "DeviceResolveError" in text:
+        return False, "DEVICE_RESOLVE"
+    if "not found in" in text.lower() and "devices" in text.lower():
+        return False, "DEVICE_RESOLVE"
+    low = text.lower()
+    if "already exist" in low or "no configuration changes" in low or "unchanged" in low:
+        return True, "ALREADY_PRESENT"
+    if result.get("ok") is False:
+        return False, "DRY_RUN_FAIL"
+    return True, "DRY_RUN_OK"
 
 
 def _exabgp_commit_delta(delta: dict[str, Any], *, dry_run: bool, timeout: int) -> dict[str, Any]:
@@ -261,11 +287,28 @@ def _exabgp_onboard(args: dict[str, Any]) -> dict[str, Any]:
     ordered = [x for x in deltas if x.get("role") == "dnaas_leaf"] + [x for x in deltas if x.get("role") != "dnaas_leaf"]
     if not args.get("confirm_commit"):
         dry = []
+        all_ok = True
+        reasons = []
         for delta in ordered:
-            dry.append({"device": delta["device"], "role": delta.get("role"), "result": _exabgp_commit_delta(delta, dry_run=True, timeout=timeout)})
+            result = _exabgp_commit_delta(delta, dry_run=True, timeout=timeout)
+            ok, why = _exabgp_dry_ok(result)
+            dry.append({"device": delta["device"], "role": delta.get("role"), "result": result, "delta_verdict": why})
+            if not ok:
+                all_ok = False
+                reasons.append(f"{delta['device']}:{why}")
+        plan["dry_run"] = dry
+        if not all_ok:
+            plan["ok"] = False
+            plan["verdict"] = "DRY_RUN_FAIL"
+            plan["errors"] = [
+                "host dnos dry_run did not resolve/apply on IL devices.json",
+                *reasons,
+                "Use DNAAS-LEAF-B10/B14/B15/D16 (lab=il). Do not use HO-DNAAS-* / Houston devices.houston.json.",
+                "DUT asn is required. gateway must be the inband GW, not dut_ip. neighbor defaults to this host 100.64.6.134.",
+            ]
+            return plan
         plan["ok"] = True
         plan["verdict"] = "DRY_RUN_OK"
-        plan["dry_run"] = dry
         plan["note"] = "host dnos dry_run only; re-call with confirm_commit=true to commit"
         plan["suggested_next_call"] = _next_call(
             "user-exabgp-mcp", "exabgp_onboard",

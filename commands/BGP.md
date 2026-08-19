@@ -12,9 +12,10 @@ If `~/.cursor/bgp_profile.json` is missing (or user said `/BGP setup` / `/BGP re
 1. **AskQuestion** (plan mode; include an All option where lists apply):
    - Allocated global VLAN **range** (e.g. `2100-2199`)
    - **VLAN ID** for this peering (must sit in that range; reject otherwise)
-   - Target **DUT** hostname
-   - Inband **subnet**, **DUT IP**, **gateway** (do not assume `100.70.0.0/24`)
-   - DNAAS **leaf** / **bundle** if more than one (or "discover")
+   - Target **DUT** hostname (must be in IL `~/SCALER/db/devices.json`, e.g. PE-* / RR-SA-* — not Houston `HO-*`)
+   - DUT **BGP ASN** (the DUT's local AS; never invent 1234567)
+   - Inband **subnet**, **DUT IP**, **gateway** (gateway = inband next-hop toward this host, **not** the DUT IP)
+   - DNAAS **leaf** from IL only: `DNAAS-LEAF-B10/B14/B15/D16` (never `HO-DNAAS-*`)
    - **AFI/SAFI** (allow_multiple + **All**): ipv4-unicast, ipv6-unicast, ipv4-flowspec, ipv4-flowspec-vpn, ipv6-flowspec, ipv6-flowspec-vpn, ipv4-vpn, ipv6-vpn, ipv4-labeled-unicast, ipv6-labeled-unicast, ipv4-multicast, ipv4-rt-constrains, l2vpn-evpn, l2vpn-vpls, link-state
 2. `exabgp_session_lock` with `acquire=true`, `owner` = their username, `dut` = DUT. If `/BGP` has no profile yet, still call `exabgp_session_lock` with `acquire=false` first and print lock status.
 3. If verdict `DEVICE_BUSY`: print holder `owner`, `dut`, `age_sec`. Do **not** steal. Force only if the **current** message is an explicit stop/switch for that holder.

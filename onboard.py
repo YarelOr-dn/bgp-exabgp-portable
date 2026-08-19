@@ -6,6 +6,7 @@ import argparse
 import json
 import re
 import sys
+from pathlib import Path
 from typing import Any, Optional, Tuple
 
 BD_VLAN_RE = re.compile(r"_v(\d+)", re.IGNORECASE)
@@ -95,6 +96,32 @@ def plan_dnaas_ac(leaf: str, bundle: str, vlan: int, bd_name: str) -> dict[str, 
         "config": config,
         "rollback": rollback,
     }
+
+
+def load_host_defaults() -> dict[str, Any]:
+    path = Path(__file__).resolve().parent / "host_defaults.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def il_leaf_names(blob: str) -> list[str]:
+    """IL DNAAS leaves only. Do not substring-match HO-DNAAS-LEAF-* as DNAAS-LEAF-*."""
+    found = re.findall(r"(?<![A-Za-z0-9-])DNAAS-LEAF-[A-Za-z0-9-]+", blob or "", re.I)
+    out = []
+    for n in found:
+        if n.upper().startswith("HO-"):
+            continue
+        if n not in out:
+            out.append(n)
+    return out
+
+
+def houston_leaf_rejected(name: str) -> bool:
+    n = (name or "").upper()
+    return n.startswith("HO-") or "HO-DNAAS" in n
 
 
 def _parse_afis(raw: Any) -> list[str]:
@@ -208,22 +235,56 @@ def onboard_plan(args: dict[str, Any]) -> dict[str, Any]:
             "errors": ["will not attach to g_mgmt_v999 unless vlan is 999"],
         }
     leaf = args.get("dnaas_leaf")
+    if leaf and houston_leaf_rejected(str(leaf)):
+        return {
+            "ok": False,
+            "verdict": "WRONG_LAB",
+            "errors": [f"{leaf} looks like Houston DNAAS; IL onboard needs DNAAS-LEAF-B/D* from ~/SCALER/db/devices.json (lab=il)"],
+        }
     bundle = args.get("bundle")
     dut_bundle = args.get("dut_bundle") or bundle
     afis = _parse_afis(args.get("selected_afis") or args.get("families"))
+    host = load_host_defaults()
+    dut_ip = str(args.get("dut_ip") or "").strip()
+    gateway = str(args.get("gateway") or "").strip()
+    asn = str(args.get("asn") or "").strip()
+    missing = []
+    if device and dut_bundle and (dut_ip or gateway or asn or args.get("neighbor")):
+        if not dut_ip:
+            missing.append("dut_ip")
+        if not gateway:
+            missing.append("gateway (inband next-hop toward ExaBGP, NOT the DUT IP)")
+        if not asn:
+            missing.append("asn (DUT BGP local ASN; do not use 1234567 unless that is really the DUT)")
+    if dut_ip and gateway and dut_ip.split("/")[0] == gateway.split("/")[0]:
+        return {
+            "ok": False,
+            "verdict": "BAD_GATEWAY",
+            "errors": [
+                f"gateway {gateway} equals dut_ip {dut_ip}; static next-hop must be the inband gateway on the VLAN, not the DUT address",
+            ],
+        }
+    if missing:
+        return {
+            "ok": False,
+            "verdict": "NEED_PARAMS",
+            "errors": missing,
+            "host_defaults": {k: host.get(k) for k in ("neighbor", "peer_as", "oob_prefix", "lab")},
+        }
+    neighbor = str(args.get("neighbor") or host.get("neighbor") or "").strip()
+    peer_as = str(args.get("peer_as") or host.get("peer_as") or "").strip()
+    oob_prefix = str(args.get("oob_prefix") or host.get("oob_prefix") or "").strip()
     deltas = []
     if leaf and bundle:
         deltas.append(plan_dnaas_ac(str(leaf), str(bundle), vlan_i, bd_name))
-    if device and dut_bundle and args.get("dut_ip") and args.get("gateway"):
+    if device and dut_bundle and dut_ip and gateway and asn and neighbor and peer_as:
         subnet = str(args.get("subnet") or "24")
         prefixlen = int(subnet.split("/")[-1]) if "/" in str(subnet) else int(subnet)
         deltas.append(plan_dut(
             str(device), str(dut_bundle), vlan_i,
-            str(args["dut_ip"]), prefixlen, str(args["gateway"]),
-            str(args.get("oob_prefix") or "100.64.0.0/20"),
-            str(args.get("neighbor") or "100.64.6.134"),
-            str(args.get("asn") or "1234567"),
-            str(args.get("peer_as") or "65200"),
+            dut_ip, prefixlen, gateway,
+            oob_prefix or "100.64.0.0/20",
+            neighbor, asn, peer_as,
             selected_afis=afis,
         ))
     return {

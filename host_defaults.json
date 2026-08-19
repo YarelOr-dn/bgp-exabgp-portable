@@ -1,0 +1,7 @@
+{
+  "lab": "il",
+  "neighbor": "100.64.6.134",
+  "peer_as": "65200",
+  "oob_prefix": "100.64.0.0/20",
+  "note": "This host ExaBGP OOB. DUT ASN and inband gateway are per-user, never defaulted."
+}
