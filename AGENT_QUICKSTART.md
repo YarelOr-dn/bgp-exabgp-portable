@@ -5,17 +5,12 @@ ExaBGP **does not run on this laptop**. It runs on the lab DNAAS host (in-band).
 ## Day one
 
 1. Clone this repo.
-2. `bash install-bgp.sh --host <exabgp-host>` (or `--dry-run` first).
-3. In another terminal: `ssh -N -L 9304:127.0.0.1:9304 <exabgp-host>`
+2. `bash install-bgp.sh --host <exabgp-host>` (`--host` required; `--dry-run` still needs `--host`).
+3. Keep tunnel up: `bash bgp-tunnel.sh <exabgp-host>` (`ssh -N -L 9304:127.0.0.1:9304`).
 4. Reload Cursor so `user-exabgp-mcp` binds to `http://127.0.0.1:9304/sse`.
-5. Run `/BGP`. With no `~/.cursor/bgp_profile.json`, the agent **must AskQuestion**:
-   - your allocated global VLAN range
-   - VLAN ID for this peering (inside that range)
-   - DUT, inband subnet / DUT IP / gateway
-   - AFI/SAFI (multi-select + All): ipv4-unicast, ipv6-unicast, ipv4-flowspec, ipv4-flowspec-vpn, ipv6-flowspec, ipv6-flowspec-vpn, ipv4-vpn, ipv6-vpn, ipv4-labeled-unicast, ipv6-labeled-unicast, ipv4-multicast, ipv4-rt-constrains, l2vpn-evpn, l2vpn-vpls, link-state
-   - confirm IL DNAAS global BD `g_*_v<VLAN>` from dry-run (never silent `g_mgmt_v999`)
-6. Well-formed routes: MCP `exabgp_inject`. Named wire malform: `exabgp_malform` `list_types=true` then execute with lease. EVPN raw UPDATEs: Spirent MCP, not ExaBGP.
-7. Do not `/BGP stop` unless you hold the ExaBGP lease and you explicitly asked to stop.
+5. Run `/BGP` in **Plan mode** (AskQuestion). With no `~/.cursor/bgp_profile.json`, the agent asks VLAN range, VLAN, DUT, subnet, AFI/SAFI + All. Lock status first (`acquire=false`). Onboard: plan → `execute=true` dry_run (`DRY_RUN_OK`) → `confirm_commit=true` on the host MCP (no dnos-config). Never silent `g_mgmt_v999`.
+6. Optional Spirent EVPN raw: second tunnel `ssh -N -L 9301:127.0.0.1:9301 <host>` (not vendored here).
+7. Well-formed routes: MCP `exabgp_inject`. Named wire malform: `exabgp_malform`. Do not `/BGP stop` unless you hold the lease and explicitly asked to stop.
 
 ## Profile schema (`~/.cursor/bgp_profile.json`)
 

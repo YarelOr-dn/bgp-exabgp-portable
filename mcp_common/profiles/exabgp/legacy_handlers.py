@@ -140,20 +140,88 @@ def _exabgp_session_release(args: dict[str, Any]) -> dict[str, Any]:
     mod = _exabgp_lease_mod()
     return {**mod.release(_exabgp_owner(args), force=bool(args.get("force"))), "action": "exabgp session release"}
 
+def _exabgp_atomic_json(path: Path, payload: dict[str, Any]) -> None:
+    import tempfile as _tempfile
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = _tempfile.mkstemp(prefix=path.name + ".", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, indent=2)
+            fh.write("\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def _exabgp_walk_leaves(device: str, timeout: int) -> dict[str, Any]:
+    listed = _dnos_tool("dnos_list_devices", {"format": "text"}, timeout=timeout)
+    walk = _dnos_tool("dnos_dnaas_walk_from_dut", {"device_name": device, "format": "text"}, timeout=timeout)
+    blob = json.dumps({"list": listed, "walk": walk}, default=str)
+    leaves = sorted(set(re.findall(r"DNAAS-LEAF[-_A-Za-z0-9]+", blob, re.I)))
+    bundles = sorted(set(re.findall(r"bundle-\d+", blob, re.I)))
+    return {"leaves": leaves, "bundles": bundles, "list_ok": listed.get("ok"), "walk_ok": walk.get("ok")}
+
+
+def _exabgp_commit_delta(delta: dict[str, Any], *, dry_run: bool, timeout: int) -> dict[str, Any]:
+    return _dnos_tool(
+        "dnos_atomic_commit",
+        {
+            "device_name": delta["device"],
+            "config_text": delta["config"],
+            "dry_run": bool(dry_run),
+            "format": "text",
+        },
+        timeout=timeout,
+    )
+
+
 def _exabgp_onboard(args: dict[str, Any]) -> dict[str, Any]:
     d = _exabgp_dir()
     if str(d) not in sys.path:
         sys.path.insert(0, str(d))
     import onboard as _onboard  # type: ignore
     vlan = args.get("vlan")
+    timeout = int(args.get("timeout_sec") or 120)
     show_text = str(args.get("bd_show_text") or "")
     leaf = args.get("dnaas_leaf")
+    device = args.get("device")
+    discover = None
+    if not leaf and not show_text and device:
+        discover = _exabgp_walk_leaves(str(device), timeout)
+        leaves = discover["leaves"]
+        if not leaves:
+            return {
+                "ok": False,
+                "action": "exabgp onboard",
+                "verdict": "NO_LEAF",
+                "errors": ["no DNAAS-LEAF found via dnos_list_devices / dnos_dnaas_walk_from_dut"],
+                "discover": discover,
+            }
+        if len(leaves) > 1:
+            return {
+                "ok": True,
+                "action": "exabgp onboard",
+                "verdict": "LEAF_AMBIGUOUS",
+                "candidates": [{"dnaas_leaf": n} for n in leaves],
+                "discover": discover,
+                "errors": ["multiple DNAAS leaves; AskQuestion to pick dnaas_leaf"],
+            }
+        leaf = leaves[0]
+        args = {**args, "dnaas_leaf": leaf}
+        if not args.get("bundle") and discover["bundles"]:
+            args = {**args, "bundle": discover["bundles"][0]}
     if not show_text and leaf:
         out = _cached_dnos_show(
             device=leaf,
             commands=[f'show config network-services bridge-domain | include regex "g_.*_v{int(vlan)}"'],
             fmt=args.get("dnos_format", "text"),
-            timeout=int(args.get("timeout_sec") or 120),
+            timeout=timeout,
             ttl_sec=20,
             refresh=True,
         )
@@ -162,28 +230,82 @@ def _exabgp_onboard(args: dict[str, Any]) -> dict[str, Any]:
         args["_dnaas_query"] = {"ok": out.get("ok"), "leaf": leaf}
     plan = _onboard.onboard_plan(args)
     plan["action"] = "exabgp onboard"
-    if args.get("execute"):
-        blocked = _exabgp_lease_gate(args)
-        if blocked:
-            return blocked
-        return {
-            **plan,
-            "ok": False,
-            "verdict": "EXECUTE_REQUIRES_DNOS_ATOMIC_COMMIT",
-            "errors": [
-                "execute=true is accepted only after dry-run confirm; apply dnos_deltas with dnos_atomic_commit on this host, then exabgp_start",
-            ],
-            "suggested_next_call": _next_call(
-                "dnos-config", "dnos_atomic_commit",
-                {"device": args.get("dnaas_leaf") or args.get("device"), "dry_run": True},
-                "Commit onboard deltas via dnos_atomic_commit (dry_run first).",
-                "mutating",
-            ),
-        }
+    if discover:
+        plan["discover"] = discover
+    if plan.get("verdict") in {"BD_AMBIGUOUS", "NEED_DISCOVER", "NO_BD", "VLAN_OUT_OF_RANGE", "FORBIDDEN_FALLBACK"}:
+        return plan
+    next_args = {
+        "vlan": vlan,
+        "device": args.get("device"),
+        "bd_name": plan.get("bd_name"),
+        "dnaas_leaf": args.get("dnaas_leaf"),
+        "bundle": args.get("bundle"),
+        "selected_afis": args.get("selected_afis"),
+        "execute": True,
+        "format": "text",
+    }
+    if not args.get("execute"):
+        plan["suggested_next_call"] = _next_call(
+            "user-exabgp-mcp", "exabgp_onboard",
+            next_args,
+            "After AskQuestion confirm BD/sub-if, re-call with execute=true (host dry_run).",
+            "mutating",
+        )
+        return plan
+    blocked = _exabgp_lease_gate(args)
+    if blocked:
+        return blocked
+    deltas = list(plan.get("dnos_deltas") or [])
+    if not deltas:
+        return {**plan, "ok": False, "verdict": "NO_DELTAS", "errors": ["no dnos_deltas to dry_run/commit"]}
+    ordered = [x for x in deltas if x.get("role") == "dnaas_leaf"] + [x for x in deltas if x.get("role") != "dnaas_leaf"]
+    if not args.get("confirm_commit"):
+        dry = []
+        for delta in ordered:
+            dry.append({"device": delta["device"], "role": delta.get("role"), "result": _exabgp_commit_delta(delta, dry_run=True, timeout=timeout)})
+        plan["ok"] = True
+        plan["verdict"] = "DRY_RUN_OK"
+        plan["dry_run"] = dry
+        plan["note"] = "host dnos dry_run only; re-call with confirm_commit=true to commit"
+        plan["suggested_next_call"] = _next_call(
+            "user-exabgp-mcp", "exabgp_onboard",
+            {**next_args, "confirm_commit": True, "execute": True},
+            "After user confirms dry-run diffs, re-call with confirm_commit=true.",
+            "mutating",
+        )
+        return plan
+    committed = []
+    leaf_done = None
+    for delta in ordered:
+        result = _exabgp_commit_delta(delta, dry_run=False, timeout=timeout)
+        committed.append({"device": delta["device"], "role": delta.get("role"), "result": result})
+        failed = (not result.get("ok")) or ("ERROR" in str(result).upper() and "Overall ERROR" in str(result))
+        if failed and delta.get("role") == "dnaas_leaf":
+            return {**plan, "ok": False, "verdict": "COMMIT_LEAF_FAILED", "commits": committed}
+        if failed:
+            if leaf_done and leaf_done.get("rollback"):
+                _dnos_tool(
+                    "dnos_atomic_commit",
+                    {"device_name": leaf_done["device"], "config_text": leaf_done["rollback"], "format": "text"},
+                    timeout=timeout,
+                )
+            return {**plan, "ok": False, "verdict": "COMMIT_DUT_FAILED_LEAF_ROLLED", "commits": committed}
+        if delta.get("role") == "dnaas_leaf":
+            leaf_done = delta
+    rb_path = d / "sessions" / f"onboard_{_exabgp_owner(args)}.json"
+    _exabgp_atomic_json(rb_path, {
+        "owner": _exabgp_owner(args),
+        "vlan": vlan,
+        "rollback": [{"device": x["device"], "role": x.get("role"), "rollback": x.get("rollback")} for x in reversed(ordered)],
+    })
+    plan["ok"] = True
+    plan["verdict"] = "COMMITTED"
+    plan["commits"] = committed
+    plan["rollback_file"] = str(rb_path)
     plan["suggested_next_call"] = _next_call(
-        "user-exabgp-mcp", "exabgp_onboard",
-        {"vlan": vlan, "device": args.get("device"), "bd_name": plan.get("bd_name"), "execute": True, "format": "text"},
-        "After AskQuestion confirm BD/sub-if, re-call with execute=true and apply dnos_atomic_commit.",
+        "user-exabgp-mcp", "exabgp_start",
+        {"device": args.get("device"), "selected_afis": args.get("selected_afis"), "execute": True, "format": "text"},
+        "Start ExaBGP with selected_afis after commit.",
         "mutating",
     )
     return plan

@@ -16,14 +16,16 @@ If `~/.cursor/bgp_profile.json` is missing (or user said `/BGP setup` / `/BGP re
    - Inband **subnet**, **DUT IP**, **gateway** (do not assume `100.70.0.0/24`)
    - DNAAS **leaf** / **bundle** if more than one (or "discover")
    - **AFI/SAFI** (allow_multiple + **All**): ipv4-unicast, ipv6-unicast, ipv4-flowspec, ipv4-flowspec-vpn, ipv6-flowspec, ipv6-flowspec-vpn, ipv4-vpn, ipv6-vpn, ipv4-labeled-unicast, ipv6-labeled-unicast, ipv4-multicast, ipv4-rt-constrains, l2vpn-evpn, l2vpn-vpls, link-state
-2. `exabgp_session_lock` with `owner` = their username, `dut` = DUT.
-3. `exabgp_onboard` with `execute` **false** (dry-run): `vlan`, `vlan_range`, `device`, optional `dnaas_leaf`/`bundle`.
-4. If verdict `BD_AMBIGUOUS` or `NO_BD`: AskQuestion on discovered BD names. Never attach `g_mgmt_v999` unless they typed VLAN **999**.
-5. AskQuestion confirm BD + sub-if from dry-run.
-6. Persist `~/.cursor/bgp_profile.json` (chmod 0600) with keys: `vlan`, `vlan_range`, `bd_name`, `subnet`, `dut_ip`, `gateway`, `dut`, `dnaas_leaf`, `bundle`, `subif`, `selected_afis`, `onboarded_at`.
-7. After confirm: `exabgp_onboard` `execute=true` then apply `dnos_deltas` via **host** `dnos_atomic_commit` (dry_run first). Then `exabgp_start` with `selected_afis` (comma-separated) only if no live session or they hold the lease **and** the current message is an explicit switch/stop. Then `exabgp_verify`.
+2. `exabgp_session_lock` with `acquire=true`, `owner` = their username, `dut` = DUT. If `/BGP` has no profile yet, still call `exabgp_session_lock` with `acquire=false` first and print lock status.
+3. If verdict `DEVICE_BUSY`: print holder `owner`, `dut`, `age_sec`. Do **not** steal. Force only if the **current** message is an explicit stop/switch for that holder.
+4. `exabgp_onboard` with `execute` **false** (plan only): `vlan`, `vlan_range`, `device`, `selected_afis`, optional `dnaas_leaf`/`bundle`. Omit leaf to auto-walk (`NEED_DISCOVER` / `LEAF_AMBIGUOUS` / `NO_LEAF`).
+5. If verdict `BD_AMBIGUOUS`, `LEAF_AMBIGUOUS`, or `NO_BD`: AskQuestion on discovered names. Never attach `g_mgmt_v999` unless they typed VLAN **999**.
+6. AskQuestion confirm BD + sub-if from the plan.
+7. Persist `~/.cursor/bgp_profile.json` (chmod 0600) with keys: `vlan`, `vlan_range`, `bd_name`, `subnet`, `dut_ip`, `gateway`, `dut`, `dnaas_leaf`, `bundle`, `subif`, `selected_afis`, `onboarded_at`.
+8. `exabgp_onboard` `execute=true` `confirm_commit=false` — host **dry_run only** (verdict `DRY_RUN_OK`). Show diffs. Do not use a general DNOS config MCP.
+9. After user confirms diffs: `exabgp_onboard` `execute=true` `confirm_commit=true` (lease required). Then `exabgp_start` with `selected_afis` only if no live session or they hold the lease **and** the current message is an explicit switch/stop. Then `exabgp_verify`.
 
-Later `/BGP` with a profile skips the wizard unless `/BGP setup` or `/BGP reset-profile`. Change families: `/BGP` AskQuestion AFI again, then `exabgp_inject` / restart only with explicit switch.
+Later `/BGP` with a profile: start with `exabgp_session_lock` `acquire=false` (status). Skip wizard unless `/BGP setup` or `/BGP reset-profile`. Change families: AskQuestion AFI again, persist `selected_afis`, then `exabgp_inject` / restart only with explicit switch.
 
 ## Routes vs malform
 
@@ -44,6 +46,8 @@ Do not run the host ExaBGP CLI or the BGP learning-prune helper from this laptop
 - `exabgp_start` requires `confirmed_no_live_session=true` or an explicit switch.
 - `exabgp_malform` execute=true is raw TCP to the DUT; requires lease; can drop the BGP session. Dry-run first.
 - VLAN outside the stored/asked range is rejected.
+- Every `/BGP` starts with lock status (`exabgp_session_lock` `acquire=false`). `DEVICE_BUSY` prints holder; no silent steal.
+- Onboard commits run **inside** `user-exabgp-mcp` (`confirm_commit`). Do not tunnel `:9300`.
 
 ## Modes
 

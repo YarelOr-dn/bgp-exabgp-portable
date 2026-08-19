@@ -49,6 +49,10 @@ run() {
   fi
 }
 
+if [[ "$UNINSTALL" -ne 1 && -z "$EXABGP_HOST" ]]; then
+  die "--host is required (or set BGP_EXABGP_HOST). Example: bash install-bgp.sh --host h263 --dry-run"
+fi
+
 if [[ "$UNINSTALL" -eq 1 ]]; then
   log "uninstall copies under $HOME_DIR/.cursor/commands/BGP.md and skills/bgp-*"
   run rm -f "$HOME_DIR/.cursor/commands/BGP.md"
@@ -101,7 +105,10 @@ print("wrote", path)
 PY
 fi
 
-log "tunnel helper: ssh -N -L 9304:127.0.0.1:9304 ${EXABGP_HOST:-<exabgp-host>}"
+log "GitHub: this is a private repo (YarelOr-dn/bgp-exabgp-portable). Collaborator access required before clone."
+log "tunnel: bash $SCRIPT_DIR/bgp-tunnel.sh $EXABGP_HOST   # ssh -N -L 9304:127.0.0.1:9304"
+log "optional Spirent: ssh -N -L 9301:127.0.0.1:9301 $EXABGP_HOST  (not part of this package)"
+log "Reload Cursor MCP after install. /BGP AskQuestion needs Plan mode."
 log "do NOT install ExaBGP, systemd MCP, or crontab on this laptop"
-log "next: reload Cursor, run /BGP (AskQuestion global VLAN on first load)"
+log "next: keep the tunnel up, reload Cursor, /BGP"
 exit 0
