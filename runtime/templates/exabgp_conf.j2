@@ -1,0 +1,22 @@
+{# ExaBGP Configuration Template for BGP Peering Tool #}
+{# Note: ExaBGP does NOT need 'multihop' - only the DNOS peer does. #}
+{# DNOS BgpTrius (NSR) drops incoming SYN-ACKs from external peers via iptables mark filtering. #}
+{# Use passive true + listen 179 so PE initiates TCP, avoiding the INPUT chain DROP rules. #}
+{# Do NOT use incoming-ttl -- it sets IP_TTL on the socket (not MIN_TTL), killing SYN-ACKs in transit. #}
+
+neighbor {{ device_ip }} {
+    router-id {{ router_id | default('100.64.6.134') }};
+    local-address {{ local_address | default('100.64.6.134') }};
+    local-as {{ local_as | default(65200) }};
+    peer-as {{ peer_as }};
+    hold-time {{ hold_time | default(600) }};
+    passive true;
+    listen 179;
+    outgoing-ttl 64;
+
+    family {
+        {% for family in families %}
+        {{ family }};
+        {% endfor %}
+    }
+}

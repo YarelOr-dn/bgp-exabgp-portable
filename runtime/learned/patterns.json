@@ -1,0 +1,316 @@
+{
+  "patterns": [
+    {
+      "id": "dnos_static_route",
+      "device_type": "dnos",
+      "pattern": "protocols static address-family ipv4-unicast route X/Y next-hop Z",
+      "learned_from": "initial_session",
+      "timestamp": "2026-02-15T18:00:00Z",
+      "note": "NOT routing-options. DNOS uses 'protocols static address-family ipv4-unicast route'."
+    },
+    {
+      "id": "ebgp_multihop_required",
+      "device_type": "dnos",
+      "pattern": "protocols bgp <asn> neighbor <ip> ebgp-multihop 10",
+      "learned_from": "initial_session",
+      "timestamp": "2026-02-15T18:00:00Z",
+      "note": "Peer goes through firewall, not directly connected. Without ebgp-multihop, DNOS rejects with 'eBGP peer not directly connected'."
+    },
+    {
+      "id": "exabgp_family_names",
+      "device_type": "exabgp",
+      "pattern": "ipv4 flow (NOT flowspec), ipv4 flow-vpn (NOT flowspec-vpn)",
+      "learned_from": "initial_session",
+      "timestamp": "2026-02-15T18:00:00Z",
+      "note": "ExaBGP 5.0.1 uses 'flow' and 'flow-vpn', not 'flowspec' and 'flowspec-vpn'."
+    },
+    {
+      "id": "exabgp_ipv6_parser_bug",
+      "device_type": "exabgp",
+      "pattern": "All 8 AFI/SAFIs supported with ExaBGP patches",
+      "learned_from": "rrsa2_afi_fix_2026-02-16",
+      "timestamp": "2026-02-16T08:05:00Z",
+      "note": "Patch 1: ExtendedCommunitiesIPv6 8-byte fallback. Patch 2: TrafficRedirectIPv6 data[2:20]."
+    },
+    {
+      "id": "dnos_hold_time_180",
+      "device_type": "dnos",
+      "pattern": "hold-time 180",
+      "learned_from": "fortigate_keepalive_fix_2026-03-04",
+      "timestamp": "2026-03-04T16:21:00Z",
+      "note": "Use 180s hold-time (keepalive every 60s). 600s caused FortiGate firewall TCP session state table expiry after ~1h (keepalive too infrequent at 200s interval). 180s keeps FortiGate state alive. Match on BOTH ExaBGP and PE config. SUPERSEDES: dnos_hold_time_600."
+    },
+    {
+      "id": "exabgp_named_pipes",
+      "device_type": "exabgp",
+      "pattern": "mkfifo /run/exabgp/exabgp.in (ONLY .in, NEVER .out)",
+      "learned_from": "root_cause_2026-03-03",
+      "timestamp": "2026-03-03T13:45:00Z",
+      "note": "CRITICAL: Only create exabgp.in pipe. If exabgp.out exists, ExaBGP spawns internal CLI subprocess that crashes (daemon.drop=true -> nobody user -> /home/dn 750 -> Permission denied -> 5 deaths -> ExaBGP terminates). pipe.py now deletes exabgp.out if found. Also set daemon.drop=false in exabgp.env."
+    },
+    {
+      "id": "dnos_show_file_log",
+      "device_type": "dnos",
+      "pattern": "show file log routing_engine/system-events.log | include <PATTERN>",
+      "learned_from": "syslog_investigation_2026-03-04",
+      "timestamp": "2026-03-04T18:00:00Z",
+      "note": "PREFERRED method for historical syslog on DNOS. No SSH to Linux shell needed. Wildcard system-events.log* searches rotated logs. Families: BGP, Management, RSVP, ISIS, OSPF, LDP, OAM. Max 2 pipe operators. SUPERSEDES: SSH grep /var/log/syslog (fallback only)."
+    },
+    {
+      "id": "dnos_local_as_no_prepend",
+      "device_type": "dnos",
+      "pattern": "local-as <peer_as> type no-prepend",
+      "learned_from": "initial_session",
+      "timestamp": "2026-02-15T18:00:00Z",
+      "note": "When ExaBGP AS (65200) differs from device BGP AS, use 'local-as <peer_as> type no-prepend' on the device neighbor config."
+    },
+    {
+      "id": "dnos_send_community_both",
+      "device_type": "dnos",
+      "pattern": "send-community community-type both",
+      "learned_from": "initial_session",
+      "timestamp": "2026-02-15T18:00:00Z",
+      "note": "Required for extended communities (route targets in FlowSpec-VPN). Use 'community-type both' under each address-family."
+    }
+  ],
+  "dnaas_path_cache": {
+    "RR-SA-2": {
+      "dnaas_leaf": "DNAAS-LEAF-B15",
+      "device_bundle": "bundle-100",
+      "device_999_exists": true,
+      "device_999_ip": "100.70.0.205/24",
+      "bgp_neighbor_exists": true,
+      "bgp_asn": 123,
+      "bgp_local_as": 1234567,
+      "static_route_exists": true,
+      "discovered_at": "2026-02-15T19:48:00Z",
+      "dnaas_leaf_ip": "100.64.101.6",
+      "dnaas_leaf_creds": "sisaev/Drive1234!"
+    },
+    "YOR_PE-1": {
+      "dnaas_leaf": "DNAAS-LEAF-D16",
+      "dnaas_leaf_ip": "100.64.101.123",
+      "dnaas_leaf_creds": "sisaev/Drive1234!",
+      "device_interface": "ge400-0/0/5",
+      "leaf_interface": "ge100-0/0/5",
+      "device_999_interface": "ge400-0/0/5.999",
+      "device_999_exists": true,
+      "device_999_ip": "100.70.0.205/24",
+      "bgp_neighbor_exists": true,
+      "bgp_asn": 1234567,
+      "static_route_exists": true,
+      "discovered_at": "2026-02-17T14:55:00Z",
+      "note": "DNAAS-LEAF-D16 BD g_mgmt_v999 already had ge100-0/0/5.999 pre-configured"
+    },
+    "YOR_CL_PE-4": {
+      "dnaas_leaf": "DNAAS-LEAF-B10",
+      "dnaas_leaf_ip": "100.64.101.3",
+      "dnaas_leaf_creds": "sisaev/Drive1234!",
+      "device_interface": "ge100-18/0/6",
+      "leaf_interface": "ge100-0/0/5",
+      "device_999_interface": "ge100-18/0/6.999",
+      "device_999_exists": true,
+      "device_999_ip": "100.70.0.206/24",
+      "bgp_neighbor_exists": true,
+      "bgp_asn": 1234567,
+      "static_route_exists": true,
+      "discovered_at": "2026-03-03T10:53:00Z",
+      "note": "Configured DNAAS-LEAF-B10 ge100-0/0/5.999 AC in g_mgmt_v999 BD"
+    }
+  },
+  "exabgp_quirks": [
+    {
+      "id": "orphan_processes_cause_collision",
+      "description": "Orphaned ExaBGP processes (from killed terminals, crashed agents, or forgotten sessions) all connect to the same peer simultaneously, causing BGP NOTIFICATION 6/7 (Connection Collision Resolution) on every attempt. The session will NEVER establish until all orphans are killed.",
+      "workaround": "Check for existing active session FIRST. If session exists and ExaBGP alive, return early \u2014 do NOT kill. ExaBGP runs indefinitely until /BGP stop. Only kill orphans when starting a FRESH session (no active session for this session_id). Use stable session_id per device: device_name.lower().replace('-','_')."
+    },
+    {
+      "id": "ipv6_flow_crash",
+      "description": "ExaBGP 5.0.1 parser crashes on certain IPv6 FlowSpec extended communities",
+      "workaround": "Patched: communities.py and traffic.py (TrafficRedirectIPv6)"
+    },
+    {
+      "id": "no_multihop_keyword",
+      "description": "ExaBGP 5.0.1 does NOT support 'multihop' keyword in config. It causes exit code 1.",
+      "workaround": "Do NOT add multihop to ExaBGP config. Only the DNOS device needs ebgp-multihop. ExaBGP handles TTL automatically."
+    },
+    {
+      "id": "no_process_section_needed",
+      "description": "ExaBGP 5.x has built-in CLI pipe handler. No explicit process section needed for route injection.",
+      "workaround": "Omit the process section. Use /run/exabgp/exabgp.in pipe directly for route injection."
+    },
+    {
+      "id": "active_mode_connect_179",
+      "description": "ExaBGP must use passive=false + connect 179 (ACTIVE mode). DUT has 'passive enabled' so DUT never initiates SYN. ExaBGP initiates a single clean SYN. Combined: ExaBGP active + DUT passive = single clean TCP handshake, no SYN storms, no FortiGate IDS trigger. SUPERSEDES: passive_true_listen_179 (caused passive-passive TCP deadlock when both sides listen and neither connects, triggering 18+ watchdog restart loops overnight 2026-03-05).",
+      "workaround": "Set passive false; connect 179; in ExaBGP config. DUT must have 'passive enabled'. config_gen.py default updated 2026-03-05. Watchdog has _is_exabgp_passive() + _fix_passive_config() auto-detection."
+    },
+    {
+      "id": "ttl_outgoing_only",
+      "description": "For eBGP multihop, ExaBGP needs outgoing-ttl 64 ONLY. Do NOT use incoming-ttl -- it sets IP_TTL on the socket (not MIN_TTL), causing SYN-ACK to go out with low TTL and be discarded in transit. Note: with active mode (connect 179), ExaBGP initiates the SYN so TTL matters for the outgoing direction. SUPERSEDES: ttl_incoming_outgoing.",
+      "workaround": "Add outgoing-ttl 64 only. Never add incoming-ttl."
+    },
+    {
+      "id": "connect_179_not_listen",
+      "description": "ExaBGP connects to port 179 on device (active mode). DUT listens (passive enabled). SUPERSEDES: listen_179_not_connect (caused passive-passive deadlock 2026-03-05 when both sides listen).",
+      "workaround": "Use connect 179 (not listen 179) in ExaBGP config. DUT has passive enabled."
+    },
+    {
+      "id": "router_id_local_ip",
+      "description": "Use local-address as router-id for consistency.",
+      "workaround": "Set router-id to same value as local-address."
+    },
+    {
+      "id": "flowspec_vpn_flat_format_required",
+      "description": "ExaBGP API pipe REQUIRES flat format for FlowSpec-VPN routes with rd. The match{}/then{} section-style wrappers cause parse failure.",
+      "workaround": "Use FLAT format: 'announce flow route rd X destination Y redirect IP extended-community [ target:RT ]'. route_builder.py outputs flat. bgp_tool auto-converts on inject. Persisted routes reinjected on start (seamless)."
+    },
+    {
+      "id": "flowspec_safi133_flat_format_required",
+      "description": "ExaBGP API pipe REQUIRES flat format for FlowSpec SAFI 133 (non-VPN) too. The match{}/then{} format SILENTLY fails \u2014 ExaBGP returns 'error' on exabgp.out but writes nothing to log. Routes never sent to peer.",
+      "workaround": "Use FLAT format: 'announce flow route destination <prefix> <action>'. Example: 'announce flow route destination 10.0.0.0/24 rate-limit 0'. For IPv6: same syntax with IPv6 prefix \u2014 ExaBGP auto-detects AFI from address format."
+    },
+    {
+      "id": "exabgp_out_pipe_diagnostic",
+      "description": "ExaBGP writes 'error' or 'done' to /run/exabgp/exabgp.out for each API pipe command. ALWAYS check this pipe after injection \u2014 it's the only way to detect silent failures (no log, no BGP update).",
+      "workaround": "After writing to exabgp.in, read exabgp.out with: timeout 1 cat /run/exabgp/exabgp.out. 'error' = command rejected. 'done' = accepted. Multiple 'error' = queued failures from batch writes."
+    },
+    {
+      "id": "ipv6_flow_family_works",
+      "description": "ExaBGP 5.0.1 'ipv6 flow' family WORKS despite .cursorrules noting a parser bug. Session establishes, routes are accepted and sent to peer. The parser bug may only affect specific community types (patched in our install).",
+      "workaround": "Safe to use 'ipv6 flow' in ExaBGP family config. No workaround needed."
+    },
+    {
+      "id": "pe4_iptables_bgp_block",
+      "description": "ROOT CAUSE FOUND: PE-4 NCC container iptables INPUT chain has DROP rules for TCP port 179 (dpt and spt) unless mark 0x65179. NFQUEUE queue 178 daemon supposed to mark legitimate BGP but fails for external peers like ExaBGP. bgpd IS listening on 0.0.0.0:179 inside container. SYN from ExaBGP (dpt:179) dropped by INPUT rule before reaching bgpd.",
+      "workaround": "RESOLVED: Add iptables ACCEPT rules before DROP rules: iptables -I INPUT 3 -p tcp -s <server_ip> --sport 179 -j ACCEPT; iptables -I INPUT 3 -p tcp -s <server_ip> --dport 179 -j ACCEPT. Rules are ephemeral (lost on reboot). ExaBGP uses active mode (passive false; connect 179;). DUT has passive enabled. bgp_tool.py diagnose --fix auto-applies iptables rules."
+    },
+    {
+      "id": "preload_mixed_afi_source_session_drop",
+      "description": "Preloading 12K+ IPv4 FlowSpec-VPN (source+dest) combined with IPv6 FlowSpec-VPN (source+dest) in a single process API loader causes BGP session to drop after ~325 IPv6 routes. Consistent across 2 attempts.",
+      "workaround": "Preload IPv4 first (--preload), wait for BGP establishment and route acceptance, then inject IPv6 via pipe (--fast). Do NOT combine IPv4+IPv6 source+dest routes in a single preload."
+    }
+  ],
+  "session_management": {
+    "orphan_cleanup_at_start": {
+      "description": "ALWAYS check for and kill orphaned exabgp/socat processes BEFORE starting a new session. Multiple ExaBGP instances cause BGP NOTIFICATION 6/7 (Connection Collision Resolution).",
+      "commands": [
+        "pkill -f exabgp",
+        "pkill -f socat.*exabgp",
+        "sleep 1",
+        "pgrep -f exabgp (verify clean)"
+      ],
+      "learned_from": "session_flap_2026-02-16"
+    },
+    "cleanup_at_stop": {
+      "description": "When stopping /BGP session, kill ExaBGP process AND all child processes (socat FIFOs). Check for zombies 2 seconds after kill.",
+      "commands": [
+        "kill -TERM <pid>",
+        "sleep 2",
+        "kill -9 <pid> 2>/dev/null",
+        "pkill -f socat.*exabgp"
+      ],
+      "learned_from": "session_flap_2026-02-16"
+    },
+    "session_recovery_proof": {
+      "description": "After killing ExaBGP, wait 30s then verify RR\u2194PE sessions recover. Use: show bgp summary | include Established. If sessions don't recover, check for OTHER orphan ExaBGP processes.",
+      "learned_from": "xray_encoding_proof_2026-02-16"
+    }
+  },
+  "dnos_encoding_bugs": {
+    "flowspec_vpn_redirect_ip_reflection": {
+      "description": "DNOS 26.1.0.22 FlowSpec-VPN redirect-ip outbound UPDATE encoding is broken on ALL devices. Not RR-specific. bgp_attr.c allocates 24-byte NH buffer (IPv6 VPN size) but sets NH_LEN=4 for IPv4. 20 zero bytes bleed into NLRI. Confirmed on RR-SA-2 (reflecting to PEs) AND PE-1 (advertising to RR). Any DNOS device advertising redirect-ip to any BGP peer triggers NOTIFICATION 3/9 from the receiver.",
+      "affected_component": "bgp_attr.c \u2192 bgp_packet_mpattr_start_v4_flowspec_vpn",
+      "symptom": "Route installs locally on RR (show flowspec ncp 0 shows redirect-ip-nh), but reflected UPDATE to PE is malformed",
+      "pe_behavior": "PE sends NOTIFICATION 3/9 (UPDATE Message Error, Optional Attribute Error) and tears down session",
+      "proof_method": "XRAY: run packet-capture ncc interface any count 100 filter-expression \"port 179\" verbose on RR during inject cycle. Compare NH_LEN=0 (correct, non-redirect) vs NH_LEN=4 with 24-byte buffer (broken, redirect-ip)",
+      "discovered": "2026-02-16/17",
+      "confirmed_on": [
+        "RR-SA-2 (reflector)",
+        "YOR_PE-1 (PE)"
+      ]
+    }
+  },
+  "dnos_tcam_capacity": {
+    "flowspec_pool": "Shared between FlowSpec (SAFI 133) and FlowSpec-VPN (SAFI 134)",
+    "ipv4_entries": 12000,
+    "ipv6_entries": 4000,
+    "overflow_behavior": "NCP marks excess rules as 'Not Installed, out of resources' \u2014 no crash, no silent drop",
+    "verification_command": "show system npu-resources resource-type flowspec",
+    "discovered": "2026-02-25"
+  },
+  "scale_injection_performance": {
+    "method": "inject_batch_fast via /run/exabgp/exabgp.in pipe",
+    "safi_133": {
+      "ipv4_rps": 377,
+      "ipv6_rps": 404
+    },
+    "safi_134": {
+      "ipv4_rps": 190,
+      "ipv6_rps": 172,
+      "note": "Slower due to longer route strings with RD/RT/extended-community"
+    },
+    "batch_size": 200,
+    "pipeline_16k_rules_seconds": 60,
+    "tool": "bgp_tool.py scale --mode flowspec-ipv4/flowspec-ipv6/flowspec-vpn-ipv4/flowspec-vpn-ipv6 --count N --fast",
+    "builders": [
+      "scale-flowspec-ipv4 (scale.py)",
+      "scale-flowspec-ipv6 (scale.py)",
+      "scale-flowspec-vpn-ipv4 (scale.py) \u2014 defaults: RD 1.1.1.1:200, RT 300:300",
+      "scale-flowspec-vpn-ipv6 (scale.py) \u2014 defaults: RD 1.1.1.1:200, RT 1234567:401"
+    ],
+    "discovered": "2026-02-25"
+  },
+  "failed_attempts": [
+    {
+      "id": "multihop_keyword",
+      "config": "multihop 10;",
+      "error": "ExaBGP exit code 1 on startup",
+      "resolution": "Removed multihop from ExaBGP config. Only needed on DNOS device.",
+      "timestamp": "2026-02-15T19:54:00Z"
+    },
+    {
+      "id": "traffic_redirect_ipv6",
+      "config": "TrafficRedirectIPv6.unpack data[2:11]",
+      "error": "struct.error: unpack requires a buffer of 18 bytes",
+      "resolution": "Fixed traffic.py: use data[2:20] for unpack, data[:20] for community",
+      "timestamp": "2026-02-16T08:04:00Z"
+    },
+    {
+      "id": "flowspec_safi133_match_then_silent_fail",
+      "config": "announce flow route match { destination 10.0.0.0/24; } then { rate-limit 0; }",
+      "error": "ExaBGP returns 'error' on exabgp.out. No log entry, no BGP UPDATE, 0 PfxAccepted. 12K routes wasted.",
+      "resolution": "Use flat format: 'announce flow route destination 10.0.0.0/24 rate-limit 0'. Also accepted: 'announce flow route { match { destination X; } then { rate-limit 0; } }' (outer braces). But flat is simplest.",
+      "timestamp": "2026-02-25T18:30:00Z"
+    },
+    {
+      "id": "exabgp_4byte_asn_rt_wrong_type",
+      "config": "extended-community target:1234567:300 (ASN > 65535)",
+      "error": "DNOS shows RT:0.18.214.135:300 instead of RT:1234567:300. 4-byte ASN value interpreted as IPv4 address.",
+      "resolution": "Fixed parser.py _HEADER: target4 was 0x01,0x02 (IPv4 Type 1), changed to 0x02,0x02 (4-byte ASN Type 2, RFC 5668). Same for origin4.",
+      "timestamp": "2026-02-16T16:12:00Z"
+    },
+    {
+      "id": "exabgp_redirect4_missing",
+      "config": "extended-community [ redirect:1234567:101 ] (ASN > 65535)",
+      "error": "ExaBGP ValueError: redirect community only had 2-byte ASN encoding (HL format). 4-byte ASN redirect:1234567:101 silently failed, route never sent to wire.",
+      "resolution": "Patched parser.py: added redirect4 to _HEADER (0x82,0x08 per RFC 7674), _ENCODE (LH), and auto-upgrade logic. ExaBGP now encodes TrafficRedirectASN4 for 4-byte ASN redirect communities.",
+      "timestamp": "2026-03-04T18:10:00Z"
+    },
+    {
+      "id": "dnos_sw206876_combined_redirect",
+      "config": "FlowSpec rule with BOTH redirect-ip (Simpson) AND redirect-to-rt in same rule",
+      "error": "PE-4 syslog: BGP_FLOWSPEC_UNSUPPORTED_RULE: BGP flowspec IPv4 rule cannot be applied due to unsupported action. Actions: redirect to next hop|redirect to vrf. PfxAccepted=1 is MISLEADING -- rule is in BGP RIB but NOT programmed in NCP/hardware. show flowspec shows both actions but they are not applied.",
+      "resolution": "DNOS limitation (SW-206876). Cannot combine both redirect actions in a single FlowSpec rule. Use separate rules. CRITICAL: PfxAccepted and show flowspec are NOT reliable indicators -- must check syslog via 'set logging terminal' for BGP_FLOWSPEC_UNSUPPORTED_RULE.",
+      "detection": "After FlowSpec inject: bgp_tool.py auto-checks via SSH 'set logging terminal' + 5s wait. DNOS has NO 'show logging' command. For manual check: 'show file log routing_engine/system-events.log | include FLOWSPEC_UNSUPPORTED' (DNOS CLI, PREFERRED). Fallback: SSH to active NCC Linux shell 'grep FLOWSPEC_UNSUPPORTED /var/log/syslog | tail -5'.",
+      "timestamp": "2026-03-04T19:07:00Z"
+    },
+    {
+      "id": "cluster_device_ssh",
+      "device_type": "dnos_cluster",
+      "pattern": "For cluster devices (CL in hostname), SSH must target the ACTIVE NCC hostname (serial number), not the management VIP.",
+      "example": "PE-4 (YOR_CL_PE-4): ssh dnroot@kvm108-cl408d-ncc1 (active NCC-1), NOT ssh dnroot@100.64.4.98 (VIP rejects with incorrect credentials)",
+      "note": "Check active NCC: show system components | find NCC. Active NCC has operational: active-up. Use its Serial Number field as SSH hostname.",
+      "timestamp": "2026-03-04T18:25:00Z"
+    }
+  ]
+}

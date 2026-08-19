@@ -1,0 +1,35 @@
+# tc_runner.py - All Options Reference
+# =====================================
+# SW-206876 FlowSpec-VPN Redirect Priority Test on PE-4 (VRF ALPHA)
+#
+# Prerequisite: ExaBGP session pe_4 must be active
+#   python3 ~/SCALER/FLOWSPEC_VPN/exabgp/bgp_tool.py verify --session-id pe_4
+
+# --- Scenario 1: redirect-to-rt ONLY ---
+# Expected: Redirect-vrf: ZULU, Installed
+python3 tc_runner.py 1                  # inject scenario 1
+python3 tc_runner.py 1 withdraw         # withdraw scenario 1
+
+# --- Scenario 2: redirect-to-ip ONLY (Simpson draft) ---
+# Expected: Redirect-ip-nh: 49.49.49.9, Installed
+python3 tc_runner.py 2                  # inject scenario 2
+python3 tc_runner.py 2 withdraw         # withdraw scenario 2
+
+# --- Scenario 3: BOTH redirect-to-ip + redirect-to-rt ---
+# Expected: Redirect-ip-nh + Redirect-vrf, Installed
+python3 tc_runner.py 3                  # inject scenario 3
+python3 tc_runner.py 3 withdraw         # withdraw scenario 3
+
+# --- All scenarios sequentially ---
+python3 tc_runner.py all                # inject all 3
+python3 tc_runner.py all withdraw       # withdraw all 3
+
+# --- Full test cycle (inject -> verify -> withdraw -> verify) ---
+python3 tc_runner.py 1 && python3 tc_runner.py 1 withdraw
+python3 tc_runner.py 2 && python3 tc_runner.py 2 withdraw
+python3 tc_runner.py 3 && python3 tc_runner.py 3 withdraw
+
+# --- Routes used ---
+# Scenario 1: announce flow route rd 4.4.4.4:100 destination 100.100.100.1/32 redirect 1234567:101 extended-community [ target:1234567:300 ]
+# Scenario 2: announce flow route rd 4.4.4.4:100 destination 100.100.100.1/32 redirect 49.49.49.9 extended-community [ target:1234567:300 ]
+# Scenario 3: announce flow route rd 4.4.4.4:100 destination 100.100.100.1/32 redirect 49.49.49.9 extended-community [ target:1234567:300 redirect:1234567:101 ]

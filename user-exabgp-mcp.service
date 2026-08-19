@@ -1,0 +1,20 @@
+[Unit]
+Description=User ExaBGP MCP Server
+After=network.target
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+WorkingDirectory=/home/dn
+ExecStart=/usr/bin/python3 -m user_exabgp_mcp.server
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=3
+KillMode=mixed
+KillSignal=SIGTERM
+Environment=PYTHONPATH=/home/dn:/home/dn/drivenets-topology-studio/scaler
+Environment=USER_EXABGP_MCP_PORT=9304
+
+[Install]
+WantedBy=default.target
